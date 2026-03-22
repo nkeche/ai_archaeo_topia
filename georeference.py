@@ -10,6 +10,8 @@ import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
 
+from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8
+
 # Enable GDAL Exceptions
 gdal.UseExceptions()
 
@@ -33,7 +35,7 @@ DEFAULT_EPSG = 25835
 # ==========================================
 
 def save_debug_overlay(image_path, pixel_coords, top_pts, bot_pts, left_pts, right_pts, out_path):
-    img = cv2.imread(image_path)
+    img = read_image_gray_any(image_path)
     if img is None:
         return
 
@@ -249,8 +251,9 @@ def intersect(lh, lv):
     return (x, y)
 
 def detect_frame_projection(image_path):
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None: raise ValueError("Read Error")
+    
+    img = read_image_gray_any(image_path)
+
     h, w = img.shape
     
     # --- SCAN DEPTHS ---
@@ -453,14 +456,14 @@ def process_image(img_path, geo_info, epsg, output_dir):
         )
         
         # 3. Create VRT & Warp
-        src_data = cv2.imread(img_path)
-        if src_data is None: raise ValueError("Image read error")
-        src_data = cv2.cvtColor(src_data, cv2.COLOR_BGR2RGB)
+        src_data = read_image_color_any(img_path)
+
         h, w, b = src_data.shape
         
         mem_drv = gdal.GetDriverByName('MEM')
         ds = mem_drv.Create('', w, h, 3, gdal.GDT_Byte)
-        for i in range(3): ds.GetRasterBand(i+1).WriteArray(src_data[:,:,i])
+        for i in range(3): 
+            ds.GetRasterBand(i+1).WriteArray(src_data[:,:,i])
         
         gdal_gcps = [gdal.GCP(world_coords[i][0], world_coords[i][1], 0, pixel_coords[i][0], pixel_coords[i][1]) for i in range(4)]
         
@@ -577,7 +580,8 @@ Note: This check is smart—it only reports missing maps for the specific
         f.write(legend_text)
 
 def main():
-    if not os.path.exists(OUTPUT_FOLDER): os.makedirs(OUTPUT_FOLDER)
+    if not os.path.exists(OUTPUT_FOLDER): 
+        os.makedirs(OUTPUT_FOLDER)
     
     create_legend_file(OUTPUT_FOLDER)
     
@@ -595,7 +599,11 @@ def main():
         print("Input folder not found.")
         return
         
-    for t in ('*.png', '*.PNG', '*.jpg', '*.JPG', '*.jpeg', '*.JPEG', '*.tif', '*.TIF', '*.tiff', '*.TIFF'): files.extend(glob.glob(os.path.join(INPUT_FOLDER, t)))
+    # search for the relevant image formats recursively
+    # including into subfolders to find all maps in active regions
+    for t in ('*.png', '*.PNG', '*.jpg', '*.JPG', '*.jpeg', '*.JPEG', '*.tif', '*.TIF', '*.tiff', '*.TIFF'): 
+        files.extend(glob.glob(os.path.join(INPUT_FOLDER, '**', t), recursive=True))
+
     print(f"Found {len(files)} images.")
     
     with open(report_file, "w", newline='', encoding='utf-8') as f:
