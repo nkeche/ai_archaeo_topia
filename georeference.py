@@ -10,7 +10,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
 
-from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8, robust_fit_line
+from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8, robust_fit_line, rectangle_sanity_score
 
 # Enable GDAL Exceptions
 gdal.UseExceptions()
@@ -229,7 +229,7 @@ def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='fir
     
     return valid_clusters[-1] if valid_clusters else None
 
-def fit_ransac(points, orientation):
+def fit_line_simple(points, orientation):
     if len(points) < 3: return None
     pts = np.array(points)
     
@@ -359,34 +359,58 @@ def detect_frame_projection(image_path):
         if x_loc is not None:
             right_pts.append((w - 1 - x_loc, i*ch + ch//2))
 
-    residual_thresh = max(4.0, 0.003 * max(h, w))
+    # residual_thresh = max(4.0, 0.003 * max(h, w)) # too tigh? the line fit starts hugging the wrong border cluster.?
+    residual_thresh = max(8.0, 0.0015 * max(h, w))
 
-    lt = robust_fit_line(top_pts, 'h', residual_thresh)
-    lb = robust_fit_line(bot_pts, 'h', residual_thresh)
-    ll = robust_fit_line(left_pts, 'v', residual_thresh)
-    lr = robust_fit_line(right_pts, 'v', residual_thresh)
-    
-    # Fallback
-    if not lr and ll: lr = (ll[0], w - ll[1])
-    if not lb and lt: lb = (lt[0], h - lt[1])
-    if not ll and lr: ll = (0, margin_x) 
-    if not lt and lb: lt = (0, margin_y)
-    
-    if not all([lt, lb, ll, lr]):
-        raise ValueError("Detection failed (Could not find 4 sides)")
-        
-    c_tl = intersect(lt, ll)
-    c_tr = intersect(lt, lr)
-    c_br = intersect(lb, lr)
-    c_bl = intersect(lb, ll)
+    # old/simple fits
+    lt_simple = fit_line_simple(top_pts, 'h')
+    lb_simple = fit_line_simple(bot_pts, 'h')
+    ll_simple = fit_line_simple(left_pts, 'v')
+    lr_simple = fit_line_simple(right_pts, 'v')
 
-    # add debug overlay to return type
-    pixel_coords = [c_tl, c_tr, c_br, c_bl]
+    # new/robust fits
+    lt_rob = robust_fit_line(top_pts, 'h', residual_thresh)
+    lb_rob = robust_fit_line(bot_pts, 'h', residual_thresh)
+    ll_rob = robust_fit_line(left_pts, 'v', residual_thresh)
+    lr_rob = robust_fit_line(right_pts, 'v', residual_thresh)
+
+
+    candidates = []
+
+    # Candidate 1: simple
+    if all([lt_simple, lb_simple, ll_simple, lr_simple]):
+        px_simple = [
+            intersect(lt_simple, ll_simple),
+            intersect(lt_simple, lr_simple),
+            intersect(lb_simple, lr_simple),
+            intersect(lb_simple, ll_simple),
+        ]
+        score_simple = rectangle_sanity_score(px_simple, w, h)
+        candidates.append(("simple", px_simple, score_simple))
+
+    # Candidate 2: robust
+    if all([lt_rob, lb_rob, ll_rob, lr_rob]):
+        px_rob = [
+            intersect(lt_rob, ll_rob),
+            intersect(lt_rob, lr_rob),
+            intersect(lb_rob, lr_rob),
+            intersect(lb_rob, ll_rob),
+        ]
+        score_rob = rectangle_sanity_score(px_rob, w, h)
+        candidates.append(("robust", px_rob, score_rob))
+
+    if not candidates:
+        raise ValueError("Detection failed (no valid rectangle candidates)")
+
+    best_name, pixel_coords, best_score = min(candidates, key=lambda x: x[2])
+    
     debug_data = {
         "top_pts": top_pts,
         "bot_pts": bot_pts,
         "left_pts": left_pts,
         "right_pts": right_pts,
+        "best_candidate": best_name,
+        "best_score": float(best_score),
     }
 
     return pixel_coords, debug_data

@@ -190,3 +190,47 @@ def robust_fit_line(points, orientation, residual_thresh, iterations=200):
 
     m, c = np.polyfit(indep[best_mask], dep[best_mask], 1)
     return float(m), float(c)
+
+
+
+def rectangle_sanity_score(pixel_coords, image_w, image_h):
+    pts = np.array(pixel_coords, dtype=np.float32)
+
+    # Side lengths
+    top = np.linalg.norm(pts[1] - pts[0])
+    right = np.linalg.norm(pts[2] - pts[1])
+    bottom = np.linalg.norm(pts[2] - pts[3])
+    left = np.linalg.norm(pts[3] - pts[0])
+
+    # Penalize out-of-bounds corners
+    oob = 0.0
+    for x, y in pts:
+        if x < 0 or x >= image_w or y < 0 or y >= image_h:
+            oob += 1000.0
+
+    # Penalize asymmetry
+    width_mismatch = abs(top - bottom) / max(top, bottom, 1.0)
+    height_mismatch = abs(left - right) / max(left, right, 1.0)
+
+    # Penalize bizarre slopes / twisted geometry
+    diag1 = np.linalg.norm(pts[2] - pts[0])
+    diag2 = np.linalg.norm(pts[3] - pts[1])
+    diag_mismatch = abs(diag1 - diag2) / max(diag1, diag2, 1.0)
+
+    return oob + 100.0 * width_mismatch + 100.0 * height_mismatch + 100.0 * diag_mismatch
+
+
+def filter_points_by_position(points, orientation, image_w, image_h):
+    filtered = []
+
+    for x, y in points:
+        if orientation == 'h':
+            # For top and bottom, y matters
+            if 0 <= y < image_h:
+                filtered.append((x, y))
+        else:
+            # For left and right, x matters
+            if 0 <= x < image_w:
+                filtered.append((x, y))
+
+    return filtered
