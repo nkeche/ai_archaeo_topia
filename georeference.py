@@ -10,7 +10,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
 
-from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8, robust_fit_line, rectangle_sanity_score, preprocess_for_line_detection
+from utils import mean_corner_distance, read_image_gray_any, read_image_color_any, normalize_to_uint8, robust_fit_line, rectangle_sanity_score, preprocess_for_line_detection
 
 # Enable GDAL Exceptions
 gdal.UseExceptions()
@@ -194,18 +194,24 @@ def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='fir
     # Invert image (Black lines become bright peaks)
     prof = np.sum(255 - strip, axis=axis)
     max_val = np.max(prof)
+
+    profile_len = len(prof)
+    cluster_join_dist = max(2, int(profile_len * 0.01))
+    large_gap_threshold = max(8, int(profile_len * 0.04))
     
     # Threshold to identify potential lines (35% of max intensity)
     threshold = max_val * 0.35 
     peaks = np.where(prof > threshold)[0]
     
-    if len(peaks) == 0: return None
+    if len(peaks) == 0: 
+        return None
 
     # Cluster peaks (group adjacent pixels into lines)
     clusters = []
     curr = [peaks[0]]
     for i in range(1, len(peaks)):
-        if peaks[i] <= peaks[i-1] + 5:
+        #if peaks[i] <= peaks[i-1] + 5:
+        if peaks[i] <= peaks[i - 1] + cluster_join_dist:
             curr.append(peaks[i])
         else:
             clusters.append(int(np.mean(curr)))
@@ -214,9 +220,10 @@ def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='fir
     
     # Filter very small clusters (noise)
     valid_clusters = [c for c in clusters if c > 5] 
-    if not valid_clusters: return None
+    if not valid_clusters: 
+        return None
 
-    LARGE_GAP_THRESHOLD = 25
+    #LARGE_GAP_THRESHOLD = 25
     
     # STANDARD LOGIC: Jump over the Outer Frame
     for i in range(1, len(valid_clusters)):
@@ -229,13 +236,15 @@ def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='fir
             
         gap = current_line - prev_line
         
-        if gap > LARGE_GAP_THRESHOLD:
+        #if gap > LARGE_GAP_THRESHOLD:
+        if gap > large_gap_threshold:
             return current_line
     
     return valid_clusters[-1] if valid_clusters else None
 
 def fit_line_simple(points, orientation):
-    if len(points) < 3: return None
+    if len(points) < 3: 
+        return None
     pts = np.array(points)
     
     if orientation == 'h': 
@@ -272,9 +281,11 @@ def intersect(lh, lv):
 
 def detect_frame_projection(image_path):
     
-    img_gray = read_image_gray_any(image_path)
+    # makes the results worse
+    # img_gray = read_image_gray_any(image_path)
+    # img = preprocess_for_line_detection(img_gray)
 
-    img = preprocess_for_line_detection(img_gray)
+    img = read_image_gray_any(image_path)
 
     h, w = img.shape
     
@@ -292,11 +303,22 @@ def detect_frame_projection(image_path):
     
     # --- CLEANING KERNELS ---
     # Strong: 50px (Left/Bottom) - Kills dashed lines
-    clean_kernel_h_strong = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
-    clean_kernel_v_strong = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
+    # clean_kernel_h_strong = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
+    # clean_kernel_v_strong = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
     
-    # Weak: 10px (Right) - Removes dust but keeps frame lines safe
-    clean_kernel_v_weak = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 10))
+    # # Weak: 10px (Right) - Removes dust but keeps frame lines safe
+    # clean_kernel_v_weak = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 10))
+
+    # --- CLEANING KERNELS (relative to image size) ---
+    clean_kernel_h_strong = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (max(15, w // 120), 1)
+    )
+    clean_kernel_v_strong = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (1, max(15, h // 120))
+    )
+    clean_kernel_v_weak = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (1, max(5, h // 500))
+    )
 
     strips = 20
     cw, ch = w // strips, h // strips
@@ -310,7 +332,8 @@ def detect_frame_projection(image_path):
         # Uses the raw strip directly. Works best when the frame is thin/faint.
         strip_t = img[0:margin_y, i*cw:(i+1)*cw]
         y = find_line_in_strip_projection(strip_t, 'h', limit_top, mode='first_after_gap')
-        if y is not None: top_pts.append((i*cw + cw//2, y))
+        if y is not None: 
+            top_pts.append((i*cw + cw//2, y))
         
         # ---------------------------------------------------------
         # BOTTOM (Strong Cleaning 50px + Masking)
@@ -344,7 +367,8 @@ def detect_frame_projection(image_path):
         strip_l_clean = cv2.bitwise_not(cleaned_l)
         
         x = find_line_in_strip_projection(strip_l_clean, 'v', limit_left, mode='first_after_gap')
-        if x is not None: left_pts.append((x, i*ch + ch//2))
+        if x is not None: 
+            left_pts.append((x, i*ch + ch//2))
         
         # ---------------------------------------------------------
         # RIGHT (Weak Cleaning 10px + Masking)
@@ -409,7 +433,20 @@ def detect_frame_projection(image_path):
     if not candidates:
         raise ValueError("Detection failed (no valid rectangle candidates)")
 
-    best_name, pixel_coords, best_score = min(candidates, key=lambda x: x[2])
+    #best_name, pixel_coords, best_score = min(candidates, key=lambda x: x[2])
+
+    max_allowed_shift = 0.001 * max(w, h)  # tune if needed
+
+    if all([lt_simple, lb_simple, ll_simple, lr_simple]) and all([lt_rob, lb_rob, ll_rob, lr_rob]):
+        shift = mean_corner_distance(px_simple, px_rob)
+
+    if shift > max_allowed_shift and score_rob >= score_simple:
+        best_name, pixel_coords, best_score = "simple", px_simple, score_simple
+    else:
+        best_name, pixel_coords, best_score = min(
+            [("simple", px_simple, score_simple), ("robust", px_rob, score_rob)],
+            key=lambda x: x[2],
+        )
     
     debug_data = {
         "top_pts": top_pts,
