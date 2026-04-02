@@ -144,3 +144,49 @@ def normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     scaled = (arr.astype(np.float32) - min_val) / (max_val - min_val)
     scaled = np.clip(scaled * 255.0, 0, 255)
     return scaled.astype(np.uint8)
+
+
+def robust_fit_line(points, orientation, residual_thresh, iterations=200):
+    """Fit y = m*x + c for horizontal-like lines, x = m*y + c for vertical-like lines."""
+    if len(points) < 2:
+        return None
+
+    pts = np.asarray(points, dtype=np.float32)
+
+    if orientation == 'h':
+        indep = pts[:, 0]  # x
+        dep = pts[:, 1]    # y
+    else:
+        indep = pts[:, 1]  # y
+        dep = pts[:, 0]    # x
+
+    n = len(indep)
+    rng = np.random.default_rng(42)
+    best_mask = None
+    best_count = 0
+
+    if n == 2:
+        best_mask = np.array([True, True])
+    else:
+        for _ in range(iterations):
+            i, j = rng.choice(n, size=2, replace=False)
+            x1, x2 = indep[i], indep[j]
+            if abs(x2 - x1) < 1e-6:
+                continue
+
+            m = (dep[j] - dep[i]) / (x2 - x1)
+            c = dep[i] - m * x1
+
+            residuals = np.abs(dep - (m * indep + c))
+            mask = residuals < residual_thresh
+            count = int(mask.sum())
+
+            if count > best_count:
+                best_count = count
+                best_mask = mask
+
+    if best_mask is None or best_mask.sum() < 2:
+        return None
+
+    m, c = np.polyfit(indep[best_mask], dep[best_mask], 1)
+    return float(m), float(c)

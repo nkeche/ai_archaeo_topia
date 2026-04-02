@@ -10,7 +10,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
 
-from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8
+from utils import read_image_gray_any, read_image_color_any, normalize_to_uint8, robust_fit_line
 
 # Enable GDAL Exceptions
 gdal.UseExceptions()
@@ -358,9 +358,13 @@ def detect_frame_projection(image_path):
         x_loc = find_line_in_strip_projection(strip_r, 'v', limit_right, mode='first_after_gap')
         if x_loc is not None:
             right_pts.append((w - 1 - x_loc, i*ch + ch//2))
-            
-    lt, lb = fit_ransac(top_pts, 'h'), fit_ransac(bot_pts, 'h')
-    ll, lr = fit_ransac(left_pts, 'v'), fit_ransac(right_pts, 'v')
+
+    residual_thresh = max(4.0, 0.003 * max(h, w))
+
+    lt = robust_fit_line(top_pts, 'h', residual_thresh)
+    lb = robust_fit_line(bot_pts, 'h', residual_thresh)
+    ll = robust_fit_line(left_pts, 'v', residual_thresh)
+    lr = robust_fit_line(right_pts, 'v', residual_thresh)
     
     # Fallback
     if not lr and ll: lr = (ll[0], w - ll[1])
