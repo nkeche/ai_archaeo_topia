@@ -254,6 +254,22 @@ def intersect(lh, lv):
     y = m1 * x + c1
     return (x, y)
 
+
+def select_candidate_near_target(candidates, to_global_value, target_value, max_dev):
+    """Select the candidate whose global coordinate is closest to target_value."""
+    best_value = None
+    best_dev = float("inf")
+
+    for loc, _strength in candidates:
+        value = to_global_value(loc)
+        dev = abs(value - target_value)
+        if dev <= max_dev and dev < best_dev:
+            best_value = value
+            best_dev = dev
+
+    return best_value
+
+
 def detect_frame_projection(image_path, world_coords, expected_ppm):
     img = read_image_gray_any(image_path)
     h, w = img.shape
@@ -300,7 +316,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         x_center = (x0 + x1) // 2
 
         strip_t = img[0:margin_y, x0:x1]
-        y = find_line_in_strip_projection(strip_t, "h", limit_top)
+        y = find_line_candidates_in_strip(strip_t, "h", limit_top)
         if y is not None:
             top_pts.append((x_center, y, i))
 
@@ -316,7 +332,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         cleaned_l = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_strong)
         strip_l_clean = cv2.bitwise_not(cleaned_l)
 
-        x = find_line_in_strip_projection(strip_l_clean, "v", limit_left)
+        x = find_line_candidates_in_strip(strip_l_clean, "v", limit_left)
         if x is not None:
             left_pts.append((x, y_center, i))
 
