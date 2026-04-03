@@ -6,6 +6,7 @@ If you see errors such as:
 no module named _gdal_array
 
 You need to re-install GDAL in your python virtual env:
+(From: https://gis.stackexchange.com/questions/153199/import-error-no-module-named-gdal-array)
 
 ```bash
 pip uninstall gdal
