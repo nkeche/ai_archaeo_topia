@@ -322,7 +322,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         cv2.MORPH_RECT, (1, max(5, h // 500))
     )
 
-    strips = 20
+    #strips = 20
+    strips = max(20, h // 200)
     cw, ch = w // strips, h // strips
     
     top_pts, bot_pts, left_pts, right_pts = [], [], [], []
@@ -649,9 +650,9 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
             and ar_diff <= 0.02
             and 0.460 <= ppm <= 0.485
         )
-        
+
         result["quality_ok"] = geometry_ok and (result["warp_written"] if write_warps else True)
-        
+
         result["message"] = "Success"
         return result
 
