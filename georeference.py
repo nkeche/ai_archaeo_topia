@@ -430,6 +430,55 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         if x is not None:
             left_pts.append((float(x), float(y_center), int(i)))
 
+
+    # Residual pass
+    min_anchor_pts = max(6, strips // 4)
+
+    if len(top_pts) < min_anchor_pts:
+        top_pts = []
+        relaxed_margin_y = int(h * 0.16)
+        relaxed_limit_top = int(h * 0.07)
+
+        for i in range(strips):
+            x0 = i * cw
+            x1 = w if i == strips - 1 else (i + 1) * cw
+            x_center = (x0 + x1) // 2
+
+            raw_strip_t = img[0:relaxed_margin_y, x0:x1]
+            candidates = find_line_candidates_in_strip(
+                raw_strip_t,
+                "h",
+                relaxed_limit_top,
+                threshold_ratio=0.14,
+            )
+
+            y = select_anchor_candidate(candidates, first_k=6)
+            if y is not None:
+                top_pts.append((float(x_center), float(y), int(i)))
+
+    if len(left_pts) < min_anchor_pts:
+        left_pts = []
+        relaxed_margin_x = int(w * 0.22)
+        relaxed_limit_left = int(w * 0.10)
+
+        for i in range(strips):
+            y0 = i * ch
+            y1 = h if i == strips - 1 else (i + 1) * ch
+            y_center = (y0 + y1) // 2
+
+            raw_strip_l = img[y0:y1, 0:relaxed_margin_x]
+            candidates = find_line_candidates_in_strip(
+                raw_strip_l,
+                "v",
+                relaxed_limit_left,
+                threshold_ratio=0.14,
+            )
+
+            x = select_anchor_candidate(candidates, first_k=6)
+            if x is not None:
+                left_pts.append((float(x), float(y_center), int(i)))
+
+    # LEft and Top anchors passed, continue
     residual_thresh = max(8.0, 0.0015 * max(h, w))
 
     # Validate top and left pts before proceeding, 
