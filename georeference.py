@@ -10,9 +10,8 @@ import math
 import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
-import traceback
 
-from utils import fit_line_weighted, read_image_gray_any, read_image_color_any, robust_fit_line, average_world_dimensions, line_value, validate_points
+from utils import fit_line_weighted, mean_corner_distance, read_image_gray_any, read_image_color_any, robust_fit_line
 
 # Enable GDAL Exceptions
 gdal.UseExceptions()
@@ -178,53 +177,71 @@ def load_geojson_database(json_path, name_field):
         
         entry = {"original_name": name_en, "coords": [tl, tr, br, bl]}
         for k in generate_match_keys(name_en): db[k] = entry
-
     return db, epsg
 
 # ==========================================
 # PART 2: PROJECTION DETECTION LOGIC
 # ==========================================
 
-def find_line_candidates_in_strip(
-    strip,
-    orientation,
-    max_search_dist,
-    threshold_ratio=0.35,
-    cluster_join_ratio=0.01,
-):
-    axis = 1 if orientation == "h" else 0
+def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='first_after_gap'):
+    """
+    Sums pixels along the non-scan axis. 
+    Finds the frame line using projection profiles.
+    
+    mode='first_after_gap': Standard. Finds first strong line AFTER a large gap.
+    """
+    axis = 1 if orientation == 'h' else 0
+    
+    # Invert image (Black lines become bright peaks)
     prof = np.sum(255 - strip, axis=axis)
     max_val = np.max(prof)
 
-    if max_val <= 0:
-        return []
-
     profile_len = len(prof)
-    cluster_join_dist = max(2, int(profile_len * cluster_join_ratio))
-    threshold = max_val * threshold_ratio
-
+    cluster_join_dist = max(2, int(profile_len * 0.01))
+    large_gap_threshold = max(8, int(profile_len * 0.04))
+    
+    # Threshold to identify potential lines (35% of max intensity)
+    threshold = max_val * 0.35 
     peaks = np.where(prof > threshold)[0]
-    if len(peaks) == 0:
-        return []
+    
+    if len(peaks) == 0: 
+        return None
 
+    # Cluster peaks (group adjacent pixels into lines)
     clusters = []
     curr = [peaks[0]]
     for i in range(1, len(peaks)):
+        #if peaks[i] <= peaks[i-1] + 5:
         if peaks[i] <= peaks[i - 1] + cluster_join_dist:
             curr.append(peaks[i])
         else:
-            center = int(np.mean(curr))
-            strength = float(np.sum(prof[curr]))
-            clusters.append((center, strength))
+            clusters.append(int(np.mean(curr)))
             curr = [peaks[i]]
+    clusters.append(int(np.mean(curr)))
+    
+    # Filter very small clusters (noise)
+    valid_clusters = [c for c in clusters if c > 5] 
+    if not valid_clusters: 
+        return None
 
-    center = int(np.mean(curr))
-    strength = float(np.sum(prof[curr]))
-    clusters.append((center, strength))
-
-    return [(pos, strength) for pos, strength in clusters if pos <= max_search_dist]
-
-
+    #LARGE_GAP_THRESHOLD = 25
+    
+    # STANDARD LOGIC: Jump over the Outer Frame
+    for i in range(1, len(valid_clusters)):
+        current_line = valid_clusters[i]
+        prev_line = valid_clusters[i-1]
+        
+        dist_from_start = current_line - valid_clusters[0]
+        if dist_from_start > max_search_dist:
+            break
+            
+        gap = current_line - prev_line
+        
+        #if gap > LARGE_GAP_THRESHOLD:
+        if gap > large_gap_threshold:
+            return current_line
+    
+    return valid_clusters[-1] if valid_clusters else None
 
 def fit_line_simple(points, orientation):
     if len(points) < 3: 
@@ -242,8 +259,7 @@ def fit_line_simple(points, orientation):
     mask = np.abs(y - median_val) < 50 
     clean_pts = pts[mask]
     
-    if len(clean_pts) < 2: 
-        return None
+    if len(clean_pts) < 2: return None
     
     if orientation == 'h':
         m, c = np.polyfit(clean_pts[:, 0], clean_pts[:, 1], 1)
@@ -253,68 +269,37 @@ def fit_line_simple(points, orientation):
     return m, c
 
 def intersect(lh, lv):
-    if not lh or not lv: 
-        return (0,0)
-    
+    if not lh or not lv: return (0,0)
     m1, c1 = lh
     m2, c2 = lv
     
     det = 1 - m1*m2
-    if abs(det) < 1e-5: 
-        return (0,0) 
+    if abs(det) < 1e-5: return (0,0) 
     
     x = (m2 * c1 + c2) / det
     y = m1 * x + c1
     return (x, y)
 
-def choose_edge_candidate(
-    candidates,
-    mode,
-    ignore_px=0,
-    first_k=4,
-    gap_px=8,
-):
-    if not candidates:
-        return None
-
-    filtered = [(int(pos), float(strength)) for pos, strength in candidates if pos >= ignore_px]
-    if not filtered:
-        return None
-
-    filtered.sort(key=lambda t: t[0])
-
-    if mode == "nearest_strong":
-        window = filtered[: min(first_k, len(filtered))]
-        return max(window, key=lambda t: t[1])[0]
-
-    if mode == "first_after_gap":
-        prev = filtered[0][0]
-        for pos, _ in filtered[1:]:
-            if pos - prev >= gap_px:
-                return pos
-            prev = pos
-        return filtered[0][0]
-
-    if mode == "strongest":
-        return max(filtered, key=lambda t: t[1])[0]
-
-    return filtered[0][0]
-
 
 def detect_frame_projection(image_path, world_coords, expected_ppm):
+    
     img = read_image_gray_any(image_path)
+
     h, w = img.shape
-
-    margin_x = int(w * 0.18)
+    
+    # --- SCAN DEPTHS ---
+    margin_x = int(w * 0.15)
     margin_x_right = int(w * 0.20)
-    margin_y = int(h * 0.12)
+    margin_y = int(h * 0.10)
     margin_y_bottom = int(h * 0.30)
-
-    limit_top = int(h * 0.04)
-    limit_left = int(w * 0.07)
-    limit_right = int(w * 0.08)
-    limit_bot = int(h * 0.12)
-
+    
+    # --- SEARCH LIMITS ---
+    limit_top = int(h * 0.025)   
+    limit_left = int(w * 0.05)   
+    limit_right = int(w * 0.08)   
+    limit_bot = int(h * 0.12)     
+    
+    # --- CLEANING KERNELS (relative to image size) ---
     clean_kernel_h_strong = cv2.getStructuringElement(
         cv2.MORPH_RECT, (max(15, w // 120), 1)
     )
@@ -324,142 +309,91 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
     clean_kernel_v_weak = cv2.getStructuringElement(
         cv2.MORPH_RECT, (1, max(5, h // 500))
     )
-    clean_kernel_h_top = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (max(9, w // 180), 1)
-    )
-    clean_kernel_v_left_weak = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (1, max(9, h // 180))
-    )
 
+    # Adaptive strip count (height-dependent)
     strips = max(20, h // 200)
-    cw = max(1, w // strips)
-    ch = max(1, h // strips)
-
+    cw, ch = w // strips, h // strips
+    
     top_pts, bot_pts, left_pts, right_pts = [], [], [], []
-
+    
+    # ========== TOP ==========
     for i in range(strips):
-        x0 = i * cw
-        x1 = w if i == strips - 1 else (i + 1) * cw
-        x_center = (x0 + x1) // 2
+        strip_t = img[0:margin_y, i*cw:(i+1)*cw]
+        y = find_line_in_strip_projection(strip_t, 'h', limit_top)
+        if y is not None: 
+            top_pts.append((i*cw + cw//2, y, i))  # (x, y, strip_index)
 
-        y0 = i * ch
-        y1 = h if i == strips - 1 else (i + 1) * ch
-        y_center = (y0 + y1) // 2
+    # ========== BOTTOM ==========
+    for i in range(strips):
+        if i < 5 or i >= 15:
+            raw_strip = img[h-margin_y_bottom:h, i*cw:(i+1)*cw]
+            
+            # Strong Clean (Remove Dashed Lines)
+            inv = cv2.bitwise_not(raw_strip)
+            cleaned = cv2.morphologyEx(inv, cv2.MORPH_OPEN, clean_kernel_h_strong)
+            strip_b_clean = cv2.bitwise_not(cleaned)
+            strip_b = np.flipud(strip_b_clean) 
+            
+            # Mask Legend
+            mask_zone_size = int(h * 0.055) 
+            if mask_zone_size < strip_b.shape[0]:
+                strip_b[0:mask_zone_size, :] = 255 
+            
+            y_loc = find_line_in_strip_projection(strip_b, 'h', limit_bot)
+            if y_loc is not None: 
+                bot_pts.append((i*cw + cw//2, h - 1 - y_loc, i))  # (x, y, strip_index)
 
-        # TOP
-        raw_strip_t = img[0:margin_y, x0:x1]
-        inv_t = cv2.bitwise_not(raw_strip_t)
-        cleaned_t = cv2.morphologyEx(inv_t, cv2.MORPH_OPEN, clean_kernel_h_top)
-        strip_t_clean = cv2.bitwise_not(cleaned_t)
-
-        candidates = find_line_candidates_in_strip(
-            strip_t_clean, "h", limit_top, threshold_ratio=0.22
-        )
-        if not candidates:
-            candidates = find_line_candidates_in_strip(
-                raw_strip_t, "h", limit_top, threshold_ratio=0.18
-            )
-
-        y = choose_edge_candidate(
-            candidates,
-            mode="nearest_strong",
-            ignore_px=max(2, int(0.002 * h)),
-            first_k=4,
-        )
-        if y is not None:
-            top_pts.append((float(x_center), float(y), int(i)))
-
-        # BOTTOM
-        raw_strip_b = img[h - margin_y_bottom:h, x0:x1]
-        inv_b = cv2.bitwise_not(raw_strip_b)
-        cleaned_b = cv2.morphologyEx(inv_b, cv2.MORPH_OPEN, clean_kernel_h_strong)
-        strip_b_clean = cv2.bitwise_not(cleaned_b)
-        strip_b = np.flipud(strip_b_clean)
-
-        candidates = find_line_candidates_in_strip(
-            strip_b, "h", limit_bot, threshold_ratio=0.30
-        )
-        y_loc = choose_edge_candidate(
-            candidates,
-            mode="first_after_gap",
-            ignore_px=max(4, int(0.004 * h)),
-            gap_px=max(8, int(0.01 * h)),
-        )
-        if y_loc is not None:
-            bot_pts.append((float(x_center), float(h - 1 - y_loc), int(i)))
-
-        # LEFT
-        raw_strip_l = img[y0:y1, 0:margin_x]
+    # ========== LEFT ==========
+    for i in range(strips):
+        raw_strip_l = img[i*ch:(i+1)*ch, 0:margin_x]
+        
+        # Strong Clean (Remove Dashed Lines)
         inv_l = cv2.bitwise_not(raw_strip_l)
         cleaned_l = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_strong)
         strip_l_clean = cv2.bitwise_not(cleaned_l)
+        
+        x = find_line_in_strip_projection(strip_l_clean, 'v', limit_left)
+        if x is not None: 
+            left_pts.append((x, i*ch + ch//2, i))  # (x, y, strip_index)
 
-        candidates = find_line_candidates_in_strip(
-            strip_l_clean, "v", limit_left, threshold_ratio=0.22
-        )
-        if not candidates:
-            cleaned_l_weak = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_left_weak)
-            strip_l_weak = cv2.bitwise_not(cleaned_l_weak)
-            candidates = find_line_candidates_in_strip(
-                strip_l_weak, "v", limit_left, threshold_ratio=0.18
-            )
-        if not candidates:
-            candidates = find_line_candidates_in_strip(
-                raw_strip_l, "v", limit_left, threshold_ratio=0.16
-            )
-
-        x = choose_edge_candidate(
-            candidates,
-            mode="nearest_strong",
-            ignore_px=max(2, int(0.002 * w)),
-            first_k=4,
-        )
-        if x is not None:
-            left_pts.append((float(x), float(y_center), int(i)))
-
-        # RIGHT
-        raw_strip_r = img[y0:y1, w - margin_x_right:w]
+    # ========== RIGHT ==========
+    for i in range(strips):
+        raw_strip_r = img[i*ch:(i+1)*ch, w-margin_x_right:w]
+        
+        # Weak Clean (Keep frame safe)
         inv_r = cv2.bitwise_not(raw_strip_r)
         cleaned_r = cv2.morphologyEx(inv_r, cv2.MORPH_OPEN, clean_kernel_v_weak)
         strip_r_clean = cv2.bitwise_not(cleaned_r)
-        strip_r = np.fliplr(strip_r_clean)
-
-        candidates = find_line_candidates_in_strip(
-            strip_r, "v", limit_right, threshold_ratio=0.30
-        )
-        x_loc = choose_edge_candidate(
-            candidates,
-            mode="first_after_gap",
-            ignore_px=max(4, int(0.004 * w)),
-            gap_px=max(8, int(0.01 * w)),
-        )
+        strip_r = np.fliplr(strip_r_clean) 
+        
+        # Mask Outer Frame
+        mask_zone_size_r = int(w * 0.035) 
+        if mask_zone_size_r < strip_r.shape[1]:
+            strip_r[:, 0:mask_zone_size_r] = 255 
+            
+        x_loc = find_line_in_strip_projection(strip_r, 'v', limit_right)
         if x_loc is not None:
-            right_pts.append((float(w - 1 - x_loc), float(y_center), int(i)))
+            right_pts.append((w - 1 - x_loc, i*ch + ch//2, i))  # (x, y, strip_index)
 
-    top_pts = validate_points(top_pts, "top_pts")
-    bot_pts = validate_points(bot_pts, "bot_pts")
-    left_pts = validate_points(left_pts, "left_pts")
-    right_pts = validate_points(right_pts, "right_pts")
-
-    print(
-        f"Edge counts for {os.path.basename(image_path)}: "
-        f"top={len(top_pts)} bottom={len(bot_pts)} left={len(left_pts)} right={len(right_pts)}"
-    )
-
+    # ========== LINE FITTING ==========
     residual_thresh = max(8.0, 0.0015 * max(h, w))
 
-    lt_simple = fit_line_weighted(top_pts, "h", strips) if len(top_pts) >= 3 else None
-    lb_simple = fit_line_weighted(bot_pts, "h", strips) if len(bot_pts) >= 3 else None
-    ll_simple = fit_line_weighted(left_pts, "v", strips) if len(left_pts) >= 3 else None
-    lr_simple = fit_line_weighted(right_pts, "v", strips) if len(right_pts) >= 3 else None
+    # Weighted fits (using strip position)
+    lt_simple = fit_line_weighted(top_pts, 'h', strips)
+    lb_simple = fit_line_weighted(bot_pts, 'h', strips)
+    ll_simple = fit_line_weighted(left_pts, 'v', strips)
+    lr_simple = fit_line_weighted(right_pts, 'v', strips)
 
-    lt_rob = robust_fit_line(top_pts, "h", residual_thresh) if len(top_pts) >= 2 else None
-    lb_rob = robust_fit_line(bot_pts, "h", residual_thresh) if len(bot_pts) >= 2 else None
-    ll_rob = robust_fit_line(left_pts, "v", residual_thresh) if len(left_pts) >= 2 else None
-    lr_rob = robust_fit_line(right_pts, "v", residual_thresh) if len(right_pts) >= 2 else None
+    # Robust fits (existing RANSAC method - also uses 3-tuple points)
+    lt_rob = robust_fit_line(top_pts, 'h', residual_thresh)
+    lb_rob = robust_fit_line(bot_pts, 'h', residual_thresh)
+    ll_rob = robust_fit_line(left_pts, 'v', residual_thresh)
+    lr_rob = robust_fit_line(right_pts, 'v', residual_thresh)
 
+    # ========== CANDIDATE SELECTION ==========
     candidates = []
 
+    # Candidate 1: weighted simple
     if all([lt_simple, lb_simple, ll_simple, lr_simple]):
         px_simple = [
             intersect(lt_simple, ll_simple),
@@ -470,6 +404,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         score_simple = score_candidate(px_simple, world_coords, w, h, expected_ppm)
         candidates.append(("simple", px_simple, score_simple))
 
+    # Candidate 2: robust
     if all([lt_rob, lb_rob, ll_rob, lr_rob]):
         px_rob = [
             intersect(lt_rob, ll_rob),
@@ -480,36 +415,35 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         score_rob = score_candidate(px_rob, world_coords, w, h, expected_ppm)
         candidates.append(("robust", px_rob, score_rob))
 
-    if all([lt_simple, lb_rob, ll_simple, lr_rob]):
-        px_mixed_a = [
-            intersect(lt_simple, ll_simple),
-            intersect(lt_simple, lr_rob),
-            intersect(lb_rob, lr_rob),
-            intersect(lb_rob, ll_simple),
-        ]
-        score_mixed_a = score_candidate(px_mixed_a, world_coords, w, h, expected_ppm)
-        candidates.append(("mixed_a", px_mixed_a, score_mixed_a))
-
-    if all([lt_rob, lb_simple, ll_rob, lr_simple]):
-        px_mixed_b = [
-            intersect(lt_rob, ll_rob),
-            intersect(lt_rob, lr_simple),
-            intersect(lb_simple, lr_simple),
-            intersect(lb_simple, ll_rob),
-        ]
-        score_mixed_b = score_candidate(px_mixed_b, world_coords, w, h, expected_ppm)
-        candidates.append(("mixed_b", px_mixed_b, score_mixed_b))
-
     if not candidates:
         raise ValueError("Detection failed (no valid rectangle candidates)")
 
-    best_name, pixel_coords, best_score = min(candidates, key=lambda x: x[2])
+    # Choose best candidate
+    max_allowed_shift = 0.001 * max(w, h)
+    shift = None
 
+    if all([lt_simple, lb_simple, ll_simple, lr_simple]) and all([lt_rob, lb_rob, ll_rob, lr_rob]):
+        shift = mean_corner_distance(px_simple, px_rob)
+
+    if shift is not None and shift > max_allowed_shift and score_rob >= score_simple:
+        best_name, pixel_coords, best_score = "simple", px_simple, score_simple
+    else:
+        best_name, pixel_coords, best_score = min(
+            candidates,
+            key=lambda x: x[2],
+        )
+    
+    # Extract just (x, y) for debug visualization
+    debug_top_pts = [(p[0], p[1]) for p in top_pts]
+    debug_bot_pts = [(p[0], p[1]) for p in bot_pts]
+    debug_left_pts = [(p[0], p[1]) for p in left_pts]
+    debug_right_pts = [(p[0], p[1]) for p in right_pts]
+    
     debug_data = {
-        "top_pts": [(p[0], p[1]) for p in top_pts],
-        "bot_pts": [(p[0], p[1]) for p in bot_pts],
-        "left_pts": [(p[0], p[1]) for p in left_pts],
-        "right_pts": [(p[0], p[1]) for p in right_pts],
+        "top_pts": debug_top_pts,
+        "bot_pts": debug_bot_pts,
+        "left_pts": debug_left_pts,
+        "right_pts": debug_right_pts,
         "best_candidate": best_name,
         "best_score": float(best_score),
     }
@@ -628,7 +562,6 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
 
         # 3. Debug image
         debug_out_path = os.path.join(output_dir, base_name + "_debug.png")
-
         save_debug_overlay(
             image_path=img_path,
             pixel_coords=pixel_coords,
@@ -639,7 +572,6 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
             out_path=debug_out_path,
             debug_data=debug_data,
         )
-
         result["debug_written"] = True
 
         # 4. Optional warp
@@ -704,16 +636,11 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
         result["quality_ok"] = geometry_ok and (result["warp_written"] if write_warps else True)
 
         result["message"] = "Success"
-
         return result
 
     except Exception as e:
-        print(f"\nERROR processing {img_path}: {e}")
-        traceback.print_exc()
         result["message"] = str(e)
         return result
-    
-
 
 def create_legend_file(folder_path):
     legend_text = """
