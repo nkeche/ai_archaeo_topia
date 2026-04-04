@@ -297,6 +297,17 @@ def select_candidate_near_target(
     return None
 
 
+def select_anchor_candidate(candidates, first_k=4):
+    """Pick the strongest candidate among the first few nearest-to-edge candidates."""
+    if not candidates:
+        return None
+
+    ordered = sorted(candidates, key=lambda t: t[0])
+    window = ordered[: min(first_k, len(ordered))]
+    return max(window, key=lambda t: t[1])[0]
+
+
+
 def detect_frame_projection(image_path, world_coords, expected_ppm):
     img = read_image_gray_any(image_path)
     h, w = img.shape
