@@ -335,6 +335,13 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         cv2.MORPH_RECT, (1, max(5, h // 500))
     )
 
+    clean_kernel_h_top = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (max(9, w // 180), 1)
+    )
+    clean_kernel_v_left_weak = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (1, max(9, h // 180))
+    )
+
     # Adaptive strip count
     strips = max(20, h // 200)
     cw = max(1, w // strips)
@@ -353,12 +360,31 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         x1 = w if i == strips - 1 else (i + 1) * cw
         x_center = (x0 + x1) // 2
 
-        strip_t = img[0:margin_y, x0:x1]
-        candidates = find_line_candidates_in_strip(strip_t, "h", limit_top)
+        raw_strip_t = img[0:margin_y, x0:x1]
 
-        if candidates:
-            # choose the candidate closest to the top edge
-            y = min(candidates, key=lambda t: t[0])[0]
+        # Light clean first
+        inv_t = cv2.bitwise_not(raw_strip_t)
+        cleaned_t = cv2.morphologyEx(inv_t, cv2.MORPH_OPEN, clean_kernel_h_top)
+        strip_t_clean = cv2.bitwise_not(cleaned_t)
+
+        candidates = find_line_candidates_in_strip(
+            strip_t_clean,
+            "h",
+            limit_top,
+            threshold_ratio=0.22,
+        )
+
+        # Fallback to raw strip if clean version produced nothing
+        if not candidates:
+            candidates = find_line_candidates_in_strip(
+                raw_strip_t,
+                "h",
+                limit_top,
+                threshold_ratio=0.18,
+            )
+
+        y = select_anchor_candidate(candidates, first_k=4)
+        if y is not None:
             top_pts.append((float(x_center), float(y), int(i)))
 
     # ========== LEFT ==========
@@ -373,11 +399,35 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         cleaned_l = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_strong)
         strip_l_clean = cv2.bitwise_not(cleaned_l)
 
-        candidates = find_line_candidates_in_strip(strip_l_clean, "v", limit_left)
+        candidates = find_line_candidates_in_strip(
+            strip_l_clean,
+            "v",
+            limit_left,
+            threshold_ratio=0.22,
+        )
 
-        if candidates:
-            # choose the candidate closest to the left edge
-            x = min(candidates, key=lambda t: t[0])[0]
+        # Fallback with weaker cleaning
+        if not candidates:
+            cleaned_l_weak = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_left_weak)
+            strip_l_weak = cv2.bitwise_not(cleaned_l_weak)
+            candidates = find_line_candidates_in_strip(
+                strip_l_weak,
+                "v",
+                limit_left,
+                threshold_ratio=0.18,
+            )
+
+        # Final fallback: raw strip
+        if not candidates:
+            candidates = find_line_candidates_in_strip(
+                raw_strip_l,
+                "v",
+                limit_left,
+                threshold_ratio=0.16,
+            )
+
+        x = select_anchor_candidate(candidates, first_k=4)
+        if x is not None:
             left_pts.append((float(x), float(y_center), int(i)))
 
     residual_thresh = max(8.0, 0.0015 * max(h, w))
