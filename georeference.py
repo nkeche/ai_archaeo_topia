@@ -499,6 +499,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
     if len(bot_pts) < 3 or len(right_pts) < 3:
         raise ValueError("Refined bottom/right detection produced too few points")
 
+    
     # ------------------------------------------------------------------
     # FINAL LINE FITS
     # ------------------------------------------------------------------
@@ -512,38 +513,18 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
     lb_rob = robust_fit_line(bot_pts, "h", residual_thresh)
     lr_rob = robust_fit_line(right_pts, "v", residual_thresh)
 
-    # ------------------------------------------------------------------
-    # CANDIDATES
-    # ------------------------------------------------------------------
     candidates = []
 
-    # Best practical combo: anchor top/left + robust bottom/right
-    if all([lt_anchor, ll_anchor, lb_rob, lr_rob]):
-        px_prior_robust = [
-            intersect(lt_anchor, ll_anchor),
-            intersect(lt_anchor, lr_rob),
-            intersect(lb_rob, lr_rob),
-            intersect(lb_rob, ll_anchor),
-        ]
-        score_prior_robust = score_candidate(
-            px_prior_robust, world_coords, w, h, expected_ppm
-        )
-        candidates.append(("prior_robust", px_prior_robust, score_prior_robust))
-
-    # Anchor top/left + weighted bottom/right
-    if all([lt_anchor, ll_anchor, lb_simple, lr_simple]):
-        px_prior_simple = [
-            intersect(lt_anchor, ll_anchor),
-            intersect(lt_anchor, lr_simple),
+    if all([lt_simple, ll_simple, lb_simple, lr_simple]):
+        px_simple = [
+            intersect(lt_simple, ll_simple),
+            intersect(lt_simple, lr_simple),
             intersect(lb_simple, lr_simple),
-            intersect(lb_simple, ll_anchor),
+            intersect(lb_simple, ll_simple),
         ]
-        score_prior_simple = score_candidate(
-            px_prior_simple, world_coords, w, h, expected_ppm
-        )
-        candidates.append(("prior_simple", px_prior_simple, score_prior_simple))
+        score_simple = score_candidate(px_simple, world_coords, w, h, expected_ppm)
+        candidates.append(("simple", px_simple, score_simple))
 
-    # Full robust fallback
     if all([lt_rob, ll_rob, lb_rob, lr_rob]):
         px_rob = [
             intersect(lt_rob, ll_rob),
