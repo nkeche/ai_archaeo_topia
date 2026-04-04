@@ -10,6 +10,7 @@ import math
 import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
+import traceback
 
 from utils import fit_line_weighted, mean_corner_distance, read_image_gray_any, read_image_color_any, robust_fit_line, average_world_dimensions, line_value, validate_points
 
@@ -177,6 +178,7 @@ def load_geojson_database(json_path, name_field):
         
         entry = {"original_name": name_en, "coords": [tl, tr, br, bl]}
         for k in generate_match_keys(name_en): db[k] = entry
+
     return db, epsg
 
 # ==========================================
@@ -243,12 +245,15 @@ def fit_line_simple(points, orientation):
     return m, c
 
 def intersect(lh, lv):
-    if not lh or not lv: return (0,0)
+    if not lh or not lv: 
+        return (0,0)
+    
     m1, c1 = lh
     m2, c2 = lv
     
     det = 1 - m1*m2
-    if abs(det) < 1e-5: return (0,0) 
+    if abs(det) < 1e-5: 
+        return (0,0) 
     
     x = (m2 * c1 + c2) / det
     y = m1 * x + c1
@@ -675,6 +680,7 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
 
         # 3. Debug image
         debug_out_path = os.path.join(output_dir, base_name + "_debug.png")
+
         save_debug_overlay(
             image_path=img_path,
             pixel_coords=pixel_coords,
@@ -685,6 +691,7 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
             out_path=debug_out_path,
             debug_data=debug_data,
         )
+
         result["debug_written"] = True
 
         # 4. Optional warp
@@ -749,11 +756,16 @@ def process_image(img_path, geo_info, epsg, output_dir, write_warps=False):
         result["quality_ok"] = geometry_ok and (result["warp_written"] if write_warps else True)
 
         result["message"] = "Success"
+
         return result
 
     except Exception as e:
+        print(f"\nERROR processing {img_path}: {e}")
+        traceback.print_exc()
         result["message"] = str(e)
         return result
+    
+
 
 def create_legend_file(folder_path):
     legend_text = """
