@@ -180,7 +180,7 @@ def robust_fit_line(points, orientation, residual_thresh, iterations=200):
         return None
 
     # Extract just (x, y) - handle both 2-tuple and 3-tuple points
-    pts = np.asarray([(p[0], p[1]) for p in points], dtype=np.float32)
+    pts = np.asarray([(float(p[0]), float(p[1])) for p in points], dtype=np.float32)
 
     if orientation == 'h':
         indep = pts[:, 0]  # x
@@ -331,7 +331,7 @@ def fit_line_weighted(points, orientation, total_strips):
         return None
     
     # Extract (x, y) only, ignore strip index
-    pts = np.array([(p[0], p[1]) for p in points])
+    pts = np.asarray([(float(p[0]), float(p[1])) for p in points], dtype=np.float32)
     weights = compute_strip_weights(points, orientation, total_strips)
     
     if orientation == 'h': 
