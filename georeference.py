@@ -183,25 +183,29 @@ def load_geojson_database(json_path, name_field):
 # PART 2: PROJECTION DETECTION LOGIC
 # ==========================================
 
-def find_line_in_strip_projection(strip, orientation, max_search_dist, mode='first_after_gap'):
+def find_line_in_strip_projection(
+    strip,
+    orientation,
+    max_search_dist,
+    mode="first_after_gap",
+    threshold_ratio=0.35,
+    gap_ratio=0.04,
+):
     """
     Sums pixels along the non-scan axis. 
     Finds the frame line using projection profiles.
     
     mode='first_after_gap': Standard. Finds first strong line AFTER a large gap.
     """
-    axis = 1 if orientation == 'h' else 0
-    
-    # Invert image (Black lines become bright peaks)
+    axis = 1 if orientation == "h" else 0
     prof = np.sum(255 - strip, axis=axis)
     max_val = np.max(prof)
 
     profile_len = len(prof)
     cluster_join_dist = max(2, int(profile_len * 0.01))
-    large_gap_threshold = max(8, int(profile_len * 0.04))
-    
-    # Threshold to identify potential lines (35% of max intensity)
-    threshold = max_val * 0.35 
+    large_gap_threshold = max(8, int(profile_len * gap_ratio))
+
+    threshold = max_val * threshold_ratio
     peaks = np.where(prof > threshold)[0]
     
     if len(peaks) == 0: 
@@ -319,7 +323,15 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
     # ========== TOP ==========
     for i in range(strips):
         strip_t = img[0:margin_y, i*cw:(i+1)*cw]
-        y = find_line_in_strip_projection(strip_t, 'h', limit_top)
+        
+        y = find_line_in_strip_projection(
+            strip_t,
+            "h",
+            limit_top,
+            threshold_ratio=0.35,
+            gap_ratio=0.04,
+        )
+
         if y is not None: 
             top_pts.append((i*cw + cw//2, y, i))  # (x, y, strip_index)
 
@@ -339,7 +351,14 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             if mask_zone_size < strip_b.shape[0]:
                 strip_b[0:mask_zone_size, :] = 255 
             
-            y_loc = find_line_in_strip_projection(strip_b, 'h', limit_bot)
+            y_loc = find_line_in_strip_projection(
+                strip_b,
+                "h",
+                limit_bot,
+                threshold_ratio=0.35,
+                gap_ratio=0.025,
+            )
+            
             if y_loc is not None: 
                 bot_pts.append((i*cw + cw//2, h - 1 - y_loc, i))  # (x, y, strip_index)
 
@@ -352,7 +371,14 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         cleaned_l = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_strong)
         strip_l_clean = cv2.bitwise_not(cleaned_l)
         
-        x = find_line_in_strip_projection(strip_l_clean, 'v', limit_left)
+        x = find_line_in_strip_projection(
+            strip_l_clean,
+            "v",
+            limit_left,
+            threshold_ratio=0.35,
+            gap_ratio=0.04,
+        )
+
         if x is not None: 
             left_pts.append((x, i*ch + ch//2, i))  # (x, y, strip_index)
 
@@ -371,7 +397,14 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         if mask_zone_size_r < strip_r.shape[1]:
             strip_r[:, 0:mask_zone_size_r] = 255 
             
-        x_loc = find_line_in_strip_projection(strip_r, 'v', limit_right)
+        x_loc = find_line_in_strip_projection(
+            strip_r,
+            "v",
+            limit_right,
+            threshold_ratio=0.35,
+            gap_ratio=0.025,
+        )
+
         if x_loc is not None:
             right_pts.append((w - 1 - x_loc, i*ch + ch//2, i))  # (x, y, strip_index)
 
