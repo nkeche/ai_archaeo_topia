@@ -399,7 +399,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             max_dev=seed_bottom_tol,
         )
         if y_global is not None:
-            bot_seed_pts.append((x_center, y_global, i))
+            #bot_seed_pts.append((x_center, y_global, i))
+            bot_seed_pts.append((float(x_center), float(y_global), int(i)))
 
     # Seed right from all strips
     for i in range(strips):
@@ -426,7 +427,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             max_dev=seed_right_tol,
         )
         if x_global is not None:
-            right_seed_pts.append((x_global, y_center, i))
+            #right_seed_pts.append((x_global, y_center, i))
+            right_seed_pts.append((float(x_global), float(y_center), int(i)))
 
     lb_seed = robust_fit_line(bot_seed_pts, "h", residual_thresh)
     lr_seed = robust_fit_line(right_seed_pts, "v", residual_thresh)
@@ -468,7 +470,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             max_dev=refine_bottom_tol,
         )
         if y_global is not None:
-            bot_pts.append((x_center, y_global, i))
+            #bot_pts.append((x_center, y_global, i))
+            bot_pts.append((float(x_center), float(y_global), int(i)))
 
     # Refine right from ALL strips using the right seed line
     for i in range(strips):
@@ -495,7 +498,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             max_dev=refine_right_tol,
         )
         if x_global is not None:
-            right_pts.append((x_global, y_center, i))
+            #right_pts.append((x_global, y_center, i))
+            right_pts.append((float(x_global), float(y_center), int(i)))
 
     if len(bot_pts) < 3 or len(right_pts) < 3:
         raise ValueError("Refined bottom/right detection produced too few points")
