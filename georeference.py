@@ -336,21 +336,26 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         y0 = i * ch
         y1 = h if i == strips - 1 else (i + 1) * ch
         y_center = (y0 + y1) // 2
-    
+
         raw_strip_l = img[y0:y1, 0:margin_x]
-    
+
         inv_l = cv2.bitwise_not(raw_strip_l)
         cleaned_l = cv2.morphologyEx(inv_l, cv2.MORPH_OPEN, clean_kernel_v_strong)
         strip_l_clean = cv2.bitwise_not(cleaned_l)
-    
+
         candidates = find_line_candidates_in_strip(strip_l_clean, "v", limit_left)
-    
+
         if candidates:
             # choose the candidate closest to the left edge
             x = min(candidates, key=lambda t: t[0])[0]
             left_pts.append((float(x), float(y_center), int(i)))
 
     residual_thresh = max(8.0, 0.0015 * max(h, w))
+
+    # Validate top and left pts before proceeding, 
+    # to catch early failure and avoid downstream errors
+    top_pts = validate_points(top_pts, "top_pts")
+    left_pts = validate_points(left_pts, "left_pts")
 
     # Anchor lines: top/left first
     lt_anchor = fit_line_weighted(top_pts, "h", strips)
@@ -518,8 +523,6 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
         raise ValueError("Refined bottom/right detection produced too few points")
     
 
-    top_pts = validate_points(top_pts, "top_pts")
-    left_pts = validate_points(left_pts, "left_pts")
     bot_seed_pts = validate_points(bot_seed_pts, "bot_seed_pts")
     right_seed_pts = validate_points(right_seed_pts, "right_seed_pts")
     bot_pts = validate_points(bot_pts, "bot_pts")
