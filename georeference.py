@@ -11,7 +11,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm  # Progress Bar
 
-from utils import fit_line_weighted, mean_corner_distance, read_image_gray_any, read_image_color_any, robust_fit_line, average_world_dimensions, line_value
+from utils import fit_line_weighted, mean_corner_distance, read_image_gray_any, read_image_color_any, robust_fit_line, average_world_dimensions, line_value, validate_points
 
 # Enable GDAL Exceptions
 gdal.UseExceptions()
@@ -503,7 +503,14 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
 
     if len(bot_pts) < 3 or len(right_pts) < 3:
         raise ValueError("Refined bottom/right detection produced too few points")
+    
 
+    top_pts = validate_points(top_pts, "top_pts")
+    left_pts = validate_points(left_pts, "left_pts")
+    bot_seed_pts = validate_points(bot_seed_pts, "bot_seed_pts")
+    right_seed_pts = validate_points(right_seed_pts, "right_seed_pts")
+    bot_pts = validate_points(bot_pts, "bot_pts")
+    right_pts = validate_points(right_pts, "right_pts")
     
     # ------------------------------------------------------------------
     # FINAL LINE FITS

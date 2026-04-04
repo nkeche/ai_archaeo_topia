@@ -373,3 +373,24 @@ def line_value(line, t):
     """Evaluate a fitted line at x=t for horizontal lines or y=t for vertical lines."""
     m, c = line
     return float(m * t + c)
+
+
+def validate_points(points, name):
+    cleaned = []
+
+    for idx, p in enumerate(points):
+        if len(p) < 2:
+            raise ValueError(f"{name}[{idx}] has fewer than 2 elements: {p!r}")
+
+        x = p[0]
+        y = p[1]
+        s = p[2] if len(p) > 2 else idx
+
+        if np.ndim(x) != 0:
+            raise ValueError(f"{name}[{idx}] x is not scalar: {p!r}")
+        if np.ndim(y) != 0:
+            raise ValueError(f"{name}[{idx}] y is not scalar: {p!r}")
+
+        cleaned.append((float(x), float(y), int(s)))
+
+    return cleaned
