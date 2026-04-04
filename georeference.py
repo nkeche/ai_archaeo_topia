@@ -402,7 +402,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             "v",
             limit_right,
             threshold_ratio=0.35,
-            gap_ratio=0.03,
+            gap_ratio=0.035,
         )
 
         if x_loc is not None:
