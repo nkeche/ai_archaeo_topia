@@ -399,7 +399,7 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
     bottom_tol = max(40, int(0.02 * h))
     right_tol = max(40, int(0.02 * w))
 
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # PASS 2A: seed BOTTOM and RIGHT using top/left + expected scale
     # ------------------------------------------------------------------
     bot_seed_pts = []
@@ -434,7 +434,9 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             to_global_value=lambda y_loc: h - 1 - y_loc,
             target_value=expected_bottom_y,
             max_dev=seed_bottom_tol,
+            allow_fallback=True,
         )
+
         if y_global is not None:
             #bot_seed_pts.append((x_center, y_global, i))
             bot_seed_pts.append((float(x_center), float(y_global), int(i)))
@@ -462,7 +464,9 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             to_global_value=lambda x_loc: w - 1 - x_loc,
             target_value=expected_right_x,
             max_dev=seed_right_tol,
+            allow_fallback=True,
         )
+        
         if x_global is not None:
             #right_seed_pts.append((x_global, y_center, i))
             right_seed_pts.append((float(x_global), float(y_center), int(i)))
