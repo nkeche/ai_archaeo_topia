@@ -267,6 +267,38 @@ def intersect(lh, lv):
     y = m1 * x + c1
     return (x, y)
 
+def choose_edge_candidate(
+    candidates,
+    mode,
+    ignore_px=0,
+    first_k=4,
+    gap_px=8,
+):
+    if not candidates:
+        return None
+
+    filtered = [(int(pos), float(strength)) for pos, strength in candidates if pos >= ignore_px]
+    if not filtered:
+        return None
+
+    filtered.sort(key=lambda t: t[0])
+
+    if mode == "nearest_strong":
+        window = filtered[: min(first_k, len(filtered))]
+        return max(window, key=lambda t: t[1])[0]
+
+    if mode == "first_after_gap":
+        prev = filtered[0][0]
+        for pos, _ in filtered[1:]:
+            if pos - prev >= gap_px:
+                return pos
+            prev = pos
+        return filtered[0][0]
+
+    if mode == "strongest":
+        return max(filtered, key=lambda t: t[1])[0]
+
+    return filtered[0][0]
 
 
 def detect_frame_projection(image_path, world_coords, expected_ppm):
