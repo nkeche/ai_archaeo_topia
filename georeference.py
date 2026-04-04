@@ -347,7 +347,8 @@ def detect_frame_projection(image_path, world_coords, expected_ppm):
             strip_b = np.flipud(strip_b_clean) 
             
             # Mask Legend
-            mask_zone_size = int(h * 0.055) 
+            #mask_zone_size = int(h * 0.055) 
+            mask_zone_size = int(h * 0.015)
             if mask_zone_size < strip_b.shape[0]:
                 strip_b[0:mask_zone_size, :] = 255 
             
