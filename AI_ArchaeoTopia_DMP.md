@@ -10,6 +10,8 @@
 
 **Principal Investigator:** Assist. Prof. Dr. Nadezhda Kecheva, NAIM-BAS
 
+**Project Website:** archaeotopia.naim.bg
+
 **Team members:**
 * **Assist. Prof. Dr. Angel Grigorov**, NAIM-BAS
 * **Assoc. Prof. Dr. Ivo D. Cholakov**, NAIM-BAS
@@ -31,6 +33,8 @@
 | 1.0 | 11.01.2026 | Initial DMP drafted. Project commenced. Automated georeferencing of 1:25,000 maps initiated. | N. Kecheva |
 | | | | |
 | 1.1 | 28.04.2026 | DMP updated to align with project progress. Clarification of data categories, refined estimates of data volume, and updated workflow descriptions for georeferencing, model training, and validation processes. | N. Kecheva |
+| | | | |
+| 1.2 | 13.09.2026 | DMP updated to align with project progress. Automated georeferencing of the 1:25,000 scale maps using four corner grid points was tested and dismissed due to inaccurate results. Both series of archival topographic maps at 1:25,000 scale — “Balance of earth, 1956” and “Balance of earth, 1969” — were instead georeferenced manually: the 1956 series used 4–8 control points with a 1st-order (polynomial 1) transformation, while the 1969 series used 20–25 control points with a 3rd-order (polynomial 3) transformation. Due to the lower quality of the 1956 maps, RMSE could not be reliably calculated for that series; RMSE has been documented for the 1969 series. Both series were subsequently clipped to the boundaries of their respective map-sheet grids and uploaded to the GIS version of the Archaeological Map of Bulgaria (AIS AKB). Automated georeferencing was initiated on topographic maps at 1:5,000 scale using four corner grid points. MapSAM foundation-model testing on the “Balance of earth, 1969” series is underway, with testing versions of the model tracked in the same GitHub repository as the project's other processing code and scripts. Two project presentations were delivered, one online and one in person (including at EAA 2026). The project website is now live at archaeotopia.naim.bg. | N. Kecheva |
 
 # **Table of Contents**
 
@@ -73,10 +77,14 @@ The goal of this data category is to provide the AI models with the necessary ra
     *   Ground-truth verification data collected via GNSS and unmanned aerial vehicles (drones) with RTK corrections (Note: Conducted only on a targeted sample within specific test regions, not nationwide).
 *   **2. Processed Data:** 
     *   Georeferenced topographic maps aligned to **EPSG:25835 - ETRS89 / UTM zone 35N** coordinate systems (GeoTIFF format).
+    *   Georeferencing was performed **manually** rather than automatically: the initial automated four-corner-point method was tested and dismissed due to inaccurate results. Manual georeferencing used 20–25 control points per map with a 3rd-order (polynomial 3) transformation, and RMSE has been documented for this series.
+    *   The georeferenced maps were clipped to the boundaries of their respective map-sheet grids.
     *   *Estimated Total Volume:* `over 30GB`
+    *   Dataset uploaded to the GIS version of the Archaeological Map of Bulgaria (AIS AKB).
 *   **3. Analytical Data & Code:** 
     *   Deep learning models for object detection and semantic segmentation (e.g., Foundation models like SAM, or specific models like CNN, U-Net, YOLO weights or fine-tuned models).
     *   Source code and data processing scripts (Python).
+    *   MapSAM foundation-model testing on the “Balance of earth, 1969” series is underway; testing versions of the model are tracked in the same GitHub repository as the project's other processing code and scripts (see Section 1.4).
 *   **4. Outputs & Results:** 
     *   **Sensitive:** Vector datasets representing the specific points and coordinates of archaeological symbols (burial and settlement mounds) (GeoJSON/GeoPackage).
     *   **Non-Sensitive:** Extracted isolines (contour lines) and the digital terrain model (DTM) (GeoTIFF).
@@ -97,6 +105,9 @@ The goal of this data category is to provide the AI models with the necessary ra
 
 #### 1.2.2.2. Processed Data
 *  Georeferenced topographic maps in 1:25,000 scale, 1956, in coordinate system 1930 System, grid in `EPSG:25835 - ETRS89 / UTM zone 35N`.
+*  Georeferencing was performed manually using 4–8 control points per map with a 1st-order (polynomial 1) transformation, following the dismissal of the automated four-corner-point method (see Section 1.3). Due to the lower quality of this map series, RMSE could not be reliably calculated and is therefore not reported for the 1956 series.
+*  The georeferenced maps were clipped to the boundaries of their respective map-sheet grids.
+*  Dataset uploaded to the GIS version of the Archaeological Map of Bulgaria (AIS AKB).
 
 #### 1.2.3 Archival topographic maps at **1:5,000 scale**
 *   These maps are in raster format and are provided by the Agency for Geodesy, Cartography and Cadastre (AGKK).
@@ -106,7 +117,7 @@ The goal of this data category is to provide the AI models with the necessary ra
 *   **Storage location:** NAIM-BAS file server
 
 #### 1.2.3.1. Goals
-* Georeferencing of the 1:5,000 scale maps in coordinate system 1950 System, grid in `EPSG:25835 - ETRS89 / UTM zone 35N`. Uploading the digital archive of georeferenced maps to AIS AKB for future use in archaeological research. Giving them to AGKK for their archive.
+* Georeferencing of the 1:5,000 scale maps in coordinate system 1950 System, grid in `EPSG:25835 - ETRS89 / UTM zone 35N`. Uploading the digital archive of georeferenced maps to AIS AKB for future use in archaeological research. Giving them to AGKK for their archive. Automated georeferencing using four corner grid points has been initiated for this series and is currently in progress.
 
 #### 1.2.3.2. Processed Data
 *  Georeferenced topographic maps in coordinate system 1950 System, grid in `EPSG:25835 - ETRS89 / UTM zone 35N`.
@@ -127,8 +138,9 @@ The goal of this data category is to provide the AI models with the necessary ra
 
 
 ### 1.3 Data Generation & Quality Control Workflow
-*   **Georeferencing Protocol:** The 1:25,000 maps, 1969, and 1:5,000 maps undergo an initial automated georeferencing process. Because automated processes can introduce spatial shifts on historical maps, every map is subsequently subjected to **manual expert verification** in GIS software to correct polynomial distortions. The quality control metrics of this process (e.g., automated RMSE, manual RMSE, script diagnostics, and operator initials) are meticulously logged in a standardized Operational Metadata tracking table to ensure end-to-end traceability before final archival.
+*   **Georeferencing Protocol:** Automated georeferencing of the 1:25,000 scale maps (four corner grid points) was tested and **dismissed due to inaccurate results**. Both 1:25,000 series — “Balance of earth, 1956” and “Balance of earth, 1969” — are therefore georeferenced **manually** in GIS software: 4–8 control points using a 1st-order (polynomial 1) transformation for the 1956 series, and 20–25 control points using a 3rd-order (polynomial 3) transformation for the 1969 series. Due to the lower quality of the 1956 maps, RMSE could not be reliably calculated for that series; RMSE has been documented for the 1969 series. Both series were subsequently clipped to the boundaries of their respective map-sheet grids and uploaded to AIS AKB. Automated georeferencing (four corner grid points) has been initiated for the 1:5,000 scale maps and is currently being evaluated. Every map is subsequently subjected to **manual expert verification** in GIS software to correct polynomial distortions. The quality control metrics of this process (e.g., automated RMSE, manual RMSE, script diagnostics, and operator initials) are meticulously logged in a standardized Operational Metadata tracking table to ensure end-to-end traceability before final archival.
 *   **Coordinate Reference System (CRS):** All spatial data is standardized to **EPSG:25835 - ETRS89 / UTM zone 35N**.
+*   **Model Testing**: The MapSAM foundation model is currently being tested for automated mound detection on the georeferenced “Balance of earth, 1969” series; results are not yet validated. Testing versions of the model are maintained in the same GitHub repository used for the project's other processing code and scripts (Section 1.4).
 *   **AI Validation & Confidence Levels:** All automated mound detections are subjected to an **Expert Visual Check** in GIS. Due to the national scale of the project, **Field Validation (GNSS/Drone)** will be conducted only on a targeted sample within selected test regions to establish statistical reliability. This splits the output into two confidence levels: "Visually Verified" (potential sites) and "Field Verified" (confirmed sites). Validation data from AIS AKB and other projects (e.g. "TRAP project in Yambol region") will be used for validation of the AI models and for checking their accuracy.
 
 ### 1.4 File Naming Conventions
@@ -142,7 +154,7 @@ Beyond the raw and processed digital data, the project will generate several hig
 *   **Scientific Publications:** Articles in peer-reviewed open-access journals detailing the AI methodology, georeferencing accuracy, and archaeological findings. These publications and their associated metadata will be deposited in the **Bulgarian Portal for Open Science** (https://bpos.bg/).
 *   **Edited Volume / Monograph:** A comprehensive edited volume synthesizing the project's results and the theoretical implications of applying AI to national archaeological cartography.
 *   **Master Thesis:** A Master thesis by one of the team members based on one aspect of the project's findings.
-*   **Presentations:** Presentations and proceedings at international conferences (e.g., CAA, EAA, etc.).
+*   **Presentations:** Presentations and proceedings at international conferences (e.g., CAA, EAA, etc.). To date, two project presentations have been delivered, including one at EAA 2026; one was delivered online and the other in person.
 *   **Training & Workshops:** A dedicated workshop/seminar organized to train heritage professionals, students, and stakeholders in the AI and GIS methodologies developed during the project.
 *   **Project Reports:** Interim and final reports submitted to the BNSF.
 
@@ -156,6 +168,7 @@ Beyond the raw and processed digital data, the project will generate several hig
     *   **CIDOC CRM (ISO 21127) / ARIADNEplus:** For all cultural heritage and archaeological datasets (Mound vectors).
     *   **STAC (SpatioTemporal Asset Catalog):** To catalog imagery specifically for deep learning pipelines.
 *   **Persistent Identifiers (PIDs):** Non-sensitive datasets, project documentation, and software code will be deposited in trusted international repositories (e.g., Zenodo) and the **Bulgarian Portal for Open Science** (https://bpos.bg/), where they will be assigned persistent DOIs.
+*   **Project Website:** A dedicated project website is available at archaeotopia.naim.bg, providing a public-facing overview of the project, its team, and its outputs.
 
 ### 2.2 Making Data Accessible & Handling Sensitive Data
 The project strictly follows the principle "as open as possible, as closed as necessary."
